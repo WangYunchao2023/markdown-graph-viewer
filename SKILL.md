@@ -1,7 +1,7 @@
 ---
 name: markdown-graph-viewer
 description: 智能图表生成调度器。当用户请求生成图表、图示、可视化内容时（尤其是需求模糊、不知道该用哪种图时），自动激活本Skill。激活关键词：画图、图表、diagram、生成图表、帮我画、展示结构、可视化、graph、chart、图表类型咨询。子Skill覆盖：archimate/architecture/bpmn/canvas/cloud/data-analytics/graphviz/infocard/infographic/iot/mindmap/network/security/uml/vega。
-version: 2.0.0
+version: 3.0.0
 ---
 
 # Markdown Graph Viewer - 智能图表调度器
@@ -74,23 +74,46 @@ ELSE:
     → 截图（PlantUML/HTML渲染PNG）
 ```
 
-### Step 4: 执行生成
+## Step 4: 执行生成
 
-**截图工具使用**（PlantUML渲染）：
+**PlantUML 渲染为 PNG**：
 ```bash
-python3 ~/.openclaw/workspace/skills/markdown-graph-viewer/scripts/render_to_png.py \
-    --type plantuml \
-    --input /tmp/diagram.puml \
-    --output /tmp/diagram.png
+plantuml -Tpng diagram.puml -o /output/path/
 ```
 
-**HTML截图工具使用**：
+**HTML 截图渲染为 PNG**（Playwright）：
 ```bash
 python3 ~/.openclaw/workspace/skills/markdown-graph-viewer/scripts/render_to_png.py \
     --type html \
-    --input /tmp/diagram.html \
-    --output /tmp/diagram.png
+    --input /path/to/diagram.html \
+    --output /path/to/diagram.png
 ```
+
+**PlantUML/HTML → 可双击打开的 HTML**：
+```bash
+python3 ~/.openclaw/workspace/skills/markdown-graph-viewer/scripts/md_to_html.py \
+    --input /path/to/diagram.md \
+    --output /path/to/diagram.html
+```
+
+### md_to_html.py 转换说明
+
+将 `.md`（含 PlantUML 或 HTML 图表代码）转换为**可直接双击打开的 `.html`** 文件，无需安装任何插件。
+
+**支持的文件类型**：
+| 子Skill | 转换方式 |
+|---------|---------|
+| `archimate/bpmn/cloud/data-analytics/iot/network/security/uml/mindmap` | PlantUML → HTML（plantuml.com 在线渲染） |
+| `architecture` | HTML 提取 → 独立 HTML 文件 |
+| `infographic` | 使用已生成的 PNG 截图嵌入 |
+| `canvas/graphviz` | PlantUML/DOT → HTML |
+| `vega` | JSON → HTML（内嵌 Vega-Lite viewer）|
+| `infocard` | HTML 提取 → 独立 HTML 文件 |
+
+**转换后的 HTML 使用方式**：
+- 双击直接在浏览器打开
+- 图表自动渲染（需要网络访问 plantuml.com / vega.github.io）
+- 离线环境下仍显示为代码文本（PlantUML 部分）
 
 ### Step 5: 整合输出
 
@@ -232,14 +255,17 @@ sequenceDiagram
 ## 输出文件命名规范
 
 ```
-{图表名}_{子Skill类型}_{策略}.md
-{图表名}_{子Skill类型}_截图.png（仅截图策略）
+{图表名}_{子Skill类型}.md        ← 源码
+{图表名}_{子Skill类型}.html      ← 可双击打开的HTML（自动生成）
+{图表名}_{子Skill类型}_截图.png  ← PNG截图（截图策略时）
+{图表名}_{子Skill类型}_mermaid.md ← Mermaid源码（Mermaid策略时）
 ```
 
 例如：
-- `架构图_architecture_截图.png` + `架构图_architecture.md`
-- `流程图_bpmn_mermaid.md` + `流程图_bpmn.md`
-- `思维导图_mindmap_截图.png` + `思维导图_mindmap_结构清单.md`
+- `架构图_architecture.md` + `架构图_architecture.html`
+- `流程图_bpmn.md` + `流程图_bpmn.html` + `流程图_bpmn_截图.png`
+- `思维导图_mindmap.md` + `思维导图_mindmap.html` + `思维导图_mindmap_截图.png`
+- `流程图_bpmn_mermaid.md` ← Mermaid可直接复制到飞书
 
 ---
 

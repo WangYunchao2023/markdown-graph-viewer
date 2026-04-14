@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 飞书兼容图表渲染脚本
-版本: 2.0.0
+版本: 3.0.0
 将 PlantUML / HTML 图表渲染为 PNG 截图
 """
 
