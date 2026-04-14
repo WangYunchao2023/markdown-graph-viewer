@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Markdown 转 HTML 转换器
-版本: 3.0.1
+版本: 3.0.2
 将含 PlantUML / HTML 代码的 .md 文件转换为可直接双击打开的 .html
 支持：PlantUML / HTML / Mermaid / Vega-Lite / Infographic / Canvas
 """
@@ -93,18 +93,34 @@ def build_plantuml_html(content: str, name: str) -> str:
 <head>
 <meta charset="UTF-8">
 <title>{name}</title>
+<script src="https://cdn.jsdelivr.net/npm/svg-pan-zoom@3.6.1/dist/svg-pan-zoom.min.js"></script>
 <style>
-body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #1e1e1e; padding: 20px; margin: 0; }}
-h1 {{ color: #e0e0e0; margin-bottom: 12px; font-size: 18px; }}
-#diagram {{ margin: 0 }}
-#diagram svg {{ max-width: 100%; height: auto; border-radius: 8px; box-shadow: 0 4px 16px rgba(0,0,0,0.5); background: white; display: block; }}
-#diagram img {{ max-width: 100%; height: auto; border-radius: 8px; box-shadow: 0 4px 16px rgba(0,0,0,0.5); display: block; }}
+body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #222; padding: 0; margin: 0; overflow: hidden; height: 100vh; }}
+h1 {{ color: #e0e0e0; margin: 12px 16px; font-size: 16px; position: absolute; top: 0; left: 0; z-index: 10; }}
+.note {{ background: rgba(34,197,94,0.9); color: white; padding: 4px 10px; border-radius: 4px; font-size: 11px; margin-left: 16px; }}
+#diagram {{ width: 100vw; height: 100vh; cursor: grab; }}
+#diagram:active {{ cursor: grabbing; }}
+#diagram svg {{ width: 100% !important; height: 100% !important; border-radius: 0; box-shadow: none; background: white; display: block; }}
+#diagram img {{ width: 100%; height: 100%; object-fit: contain; border-radius: 0; box-shadow: none; }}
+.hint {{ position: fixed; bottom: 12px; right: 12px; background: rgba(0,0,0,0.6); color: #aaa; font-size: 11px; padding: 6px 10px; border-radius: 4px; z-index: 10; }}
 </style>
 </head>
 <body>
-<h1>{name}</h1>
-{note}
+<h1>{name} <span class="note">{note}</span></h1>
 <div id="diagram">{svg_content}</div>
+<div class="hint">滚轮缩放 · 左键拖动平移</div>
+<script>
+document.addEventListener('DOMContentLoaded', function() {{
+  var el = document.querySelector('#diagram svg');
+  if (el) {{
+    svgPanZoom(el, {{
+      zoomEnabled: true, panEnabled: true, controlIconsEnabled: false,
+      fit: true, center: true, zoomScaleSensitivity: 0.4,
+      minZoom: 0.1, maxZoom: 20
+    }});
+  }}
+}});
+</script>
 </body>
 </html>'''
 
@@ -122,18 +138,31 @@ def build_mermaid_html(content: str, name: str) -> str:
 <meta charset="UTF-8">
 <title>{name}</title>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/svg-pan-zoom@3.6.1/dist/svg-pan-zoom.min.js"></script>
 <style>
-body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #1e1e1e; padding: 20px; margin: 0; }}
-h1 {{ color: #e0e0e0; margin-bottom: 12px; font-size: 18px; }}
-.note {{ background:#3b82f6;color:white;padding:6px 14px;border-radius:4px;margin-bottom:12px;display:inline-block;font-size:12px; }}
-#diagram {{ background: white; border-radius: 8px; padding: 20px; box-shadow: 0 4px 16px rgba(0,0,0,0.5); }}
+body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #222; padding: 0; margin: 0; overflow: hidden; height: 100vh; }}
+h1 {{ color: #e0e0e0; margin: 12px 16px; font-size: 16px; position: absolute; top: 0; left: 0; z-index: 10; }}
+.note {{ background: rgba(59,130,246,0.9); color: white; padding: 4px 10px; border-radius: 4px; font-size: 11px; margin-left: 10px; }}
+#diagram {{ width: 100vw; height: 100vh; cursor: grab; }}
+#diagram:active {{ cursor: grabbing; }}
+.mermaid {{ width: 100% !important; height: 100% !important; }}
+.mermaid svg {{ width: 100% !important; height: 100% !important; }}
+.hint {{ position: fixed; bottom: 12px; right: 12px; background: rgba(0,0,0,0.6); color: #aaa; font-size: 11px; padding: 6px 10px; border-radius: 4px; z-index: 10; }}
 </style>
 </head>
 <body>
-<h1>{name}</h1>
-<div class="note">🌐 需要网络连接渲染 Mermaid 图</div>
-<div class="mermaid">{escaped}</div>
-<script>mermaid.initialize({{ startOnLoad: true, theme: 'dark' }});</script>
+<h1>{name} <span class="note">🌐 需要网络</span></h1>
+<div id="diagram"><div class="mermaid">{escaped}</div></div>
+<div class="hint">滚轮缩放 · 左键拖动平移</div>
+<script>
+mermaid.initialize({{ startOnLoad: false, theme: 'dark' }});
+mermaid.run().then(function() {{
+  var el = document.querySelector('#diagram .mermaid svg');
+  if (el) {{
+    svgPanZoom(el, {{ zoomEnabled: true, panEnabled: true, controlIconsEnabled: false, fit: true, center: true, zoomScaleSensitivity: 0.4, minZoom: 0.05, maxZoom: 50 }});
+  }}
+}});
+</script>
 </body>
 </html>'''
 
@@ -163,13 +192,26 @@ def build_pure_html(content: str, name: str) -> str:
 <head>
 <meta charset="UTF-8">
 <title>{name}</title>
+<script src="https://cdn.jsdelivr.net/npm/svg-pan-zoom@3.6.1/dist/svg-pan-zoom.min.js"></script>
 <style>
-body {{ background: #f0f4f8; margin: 0; padding: 20px; display: flex; justify-content: center; }}
+body {{ background: #f0f4f8; margin: 0; padding: 0; overflow: hidden; height: 100vh; display: flex; align-items: center; justify-content: center; }}
 {style_content}
+.svg-container {{ width: 100vw; height: 100vh; cursor: grab; overflow: hidden; }}
+.svg-container:active {{ cursor: grabbing; }}
+.hint {{ position: fixed; bottom: 12px; right: 12px; background: rgba(0,0,0,0.6); color: #aaa; font-size: 11px; padding: 6px 10px; border-radius: 4px; }}
 </style>
 </head>
 <body>
-{html_block}
+<div class="svg-container" id="container">{html_block}</div>
+<div class="hint">滚轮缩放 · 左键拖动平移</div>
+<script>
+document.addEventListener('DOMContentLoaded', function() {{
+  var el = document.querySelector('.svg-container svg');
+  if (el) {{
+    svgPanZoom(el, {{ zoomEnabled: true, panEnabled: true, controlIconsEnabled: false, fit: true, center: true, zoomScaleSensitivity: 0.4, minZoom: 0.1, maxZoom: 20 }});
+  }}
+}});
+</script>
 </body>
 </html>'''
 
@@ -190,19 +232,26 @@ def build_vega_html(content: str, name: str) -> str:
 <script src="https://cdn.jsdelivr.net/npm/vega-lite@5/build/vega-lite.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/vega-embed@6/build/vega-embed.min.js"></script>
 <style>
-body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #1e1e1e; padding: 20px; margin: 0; }}
-h1 {{ color: #e0e0e0; margin-bottom: 12px; font-size: 18px; }}
-.note {{ background:#f59e0b;color:white;padding:6px 14px;border-radius:4px;margin-bottom:12px;display:inline-block;font-size:12px; }}
-#vis {{ background: white; border-radius: 8px; padding: 20px; box-shadow: 0 4px 16px rgba(0,0,0,0.5); }}
+body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #222; padding: 0; margin: 0; overflow: hidden; height: 100vh; }}
+h1 {{ color: #e0e0e0; margin: 12px 16px; font-size: 16px; position: absolute; top: 0; left: 0; z-index: 10; }}
+.note {{ background: rgba(245,158,11,0.9); color: white; padding: 4px 10px; border-radius: 4px; font-size: 11px; margin-left: 10px; }}
+#vis {{ width: 100vw; height: 100vh; cursor: grab; }}
+#vis:active {{ cursor: grabbing; }}
+.hint {{ position: fixed; bottom: 12px; right: 12px; background: rgba(0,0,0,0.6); color: #aaa; font-size: 11px; padding: 6px 10px; border-radius: 4px; z-index: 10; }}
 </style>
 </head>
 <body>
-<h1>{name}</h1>
-<div class="note">🌐 需要网络连接渲染 Vega 图表</div>
+<h1>{name} <span class="note">🌐 需要网络</span></h1>
 <div id="vis"></div>
+<div class="hint">滚轮缩放 · 左键拖动平移</div>
 <script>
 var spec = JSON.parse('{escaped}');
-vegaEmbed('#vis', spec, {{ actions: {{export: true, source: false, editor: false}} }}).then(function(){{}}).catch(console.error);
+vegaEmbed('#vis', spec, {{ actions: {{export: true, source: false, editor: false}}, scaleFactor: 2 }}).then(function(result) {{
+  var el = result.spec && document.querySelector('#vis svg');
+  if (el) {{
+    svgPanZoom(el, {{ zoomEnabled: true, panEnabled: true, controlIconsEnabled: false, fit: true, center: true, zoomScaleSensitivity: 0.4, minZoom: 0.1, maxZoom: 20 }});
+  }}
+}}).catch(console.error);
 </script>
 </body>
 </html>'''
@@ -221,12 +270,22 @@ def build_infographic_html(content: str, name: str, input_path: str) -> str:
 <meta charset="UTF-8">
 <title>{name}</title>
 <style>
-body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #1e1e1e; padding: 20px; margin: 0; display: flex; justify-content: center; }}
-img {{ max-width: 900px; width: 100%; height: auto; border-radius: 12px; box-shadow: 0 8px 32px rgba(0,0,0,0.5); }}
+body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #222; padding: 0; margin: 0; overflow: hidden; height: 100vh; display: flex; align-items: center; justify-content: center; }}
+img {{ max-width: 95vw; max-height: 95vh; object-fit: contain; border-radius: 8px; box-shadow: 0 8px 32px rgba(0,0,0,0.6); }}
+.hint {{ position: fixed; bottom: 12px; right: 12px; background: rgba(0,0,0,0.6); color: #aaa; font-size: 11px; padding: 6px 10px; border-radius: 4px; }}
 </style>
 </head>
 <body>
 <img src="{png_name}" alt="{name}">
+<div class="hint">滚轮缩放 · 左键拖动平移</div>
+<script>
+document.addEventListener('DOMContentLoaded', function() {{
+  var el = document.querySelector('img');
+  if (el) {{
+    svgPanZoom(el, {{ zoomEnabled: true, panEnabled: true, controlIconsEnabled: false, fit: true, center: true, zoomScaleSensitivity: 0.4, minZoom: 0.1, maxZoom: 20 }});
+  }}
+}});
+</script>
 </body>
 </html>'''
     else:
@@ -250,16 +309,17 @@ def build_canvas_html(content: str, name: str) -> str:
 <meta charset="UTF-8">
 <title>{name}</title>
 <style>
-body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #1e1e1e; padding: 20px; margin: 0; }}
-h1 {{ color: #e0e0e0; margin-bottom: 12px; font-size: 18px; }}
-.note {{ background:#6366f1;color:white;padding:6px 14px;border-radius:4px;margin-bottom:12px;display:inline-block;font-size:12px; }}
-pre {{ background: #2d2d2d; border-radius: 8px; padding: 16px; color: #d4d4d4; white-space: pre-wrap; font-size: 12px; }}
+body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #222; padding: 0; margin: 0; overflow: hidden; height: 100vh; }}
+h1 {{ color: #e0e0e0; margin: 12px 16px; font-size: 16px; position: absolute; top: 0; left: 0; z-index: 10; }}
+.note {{ background: rgba(99,102,241,0.9); color: white; padding: 4px 10px; border-radius: 4px; font-size: 11px; margin-left: 10px; }}
+pre {{ background: rgba(45,45,45,0.95); border-radius: 8px; padding: 16px; color: #d4d4d4; white-space: pre-wrap; font-size: 12px; margin: 60px 16px 16px; }}
+.hint {{ position: fixed; bottom: 12px; right: 12px; background: rgba(0,0,0,0.6); color: #aaa; font-size: 11px; padding: 6px 10px; border-radius: 4px; }}
 </style>
 </head>
 <body>
-<h1>{name}</h1>
-<div class="note">Canvas 需 Obsidian 渲染，JSON数据如下：</div>
+<h1>{name} <span class="note">Canvas 需 Obsidian 渲染</span></h1>
 <pre>{escaped}</pre>
+<div class="hint">仅展示 JSON 数据，请在 Obsidian 中查看渲染效果</div>
 </body>
 </html>'''
 

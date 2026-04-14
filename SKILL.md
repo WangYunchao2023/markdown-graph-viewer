@@ -1,7 +1,7 @@
 ---
 name: markdown-graph-viewer
 description: 智能图表生成调度器。当用户请求生成图表、图示、可视化内容时（尤其是需求模糊、不知道该用哪种图时），自动激活本Skill。激活关键词：画图、图表、diagram、生成图表、帮我画、展示结构、可视化、graph、chart、图表类型咨询。子Skill覆盖：archimate/architecture/bpmn/canvas/cloud/data-analytics/graphviz/infocard/infographic/iot/mindmap/network/security/uml/vega。
-version: 3.0.1
+version: 3.0.2
 ---
 
 # Markdown Graph Viewer - 智能图表调度器
@@ -100,13 +100,18 @@ python3 ~/.openclaw/workspace/skills/markdown-graph-viewer/scripts/md_to_html.py
 
 ### md_to_html.py 转换说明
 
-将 `.md`（含 PlantUML 或 HTML 图表代码）转换为**可直接双击打开的 `.html`** 文件，无需安装任何插件。
+将 `.md`（含 PlantUML 或 HTML 图表代码）转换为**可直接双击打开的 `.html`** 文件。
+
+**输出特性**：
+- 只显示渲染后的图，无源码
+- **滚轮缩放 + 左键拖动平移**（通过 svg-pan-zoom 实现）
+- 全屏查看，背景居中
 
 **支持的文件类型**：
 | 子Skill | 转换方式 |
 |---------|---------|
-| `archimate/bpmn/cloud/data-analytics/iot/network/security/uml/mindmap` | PlantUML → HTML（plantuml.com 在线渲染） |
-| `architecture` | HTML 提取 → 独立 HTML 文件 |
+| `archimate/bpmn/cloud/data-analytics/iot/network/security/uml/mindmap` | PlantUML → 本地SVG内嵌HTML + svg-pan-zoom（离线可用） |
+| `architecture` | HTML 提取 → 独立 HTML 文件 + svg-pan-zoom |
 | `infographic` | 使用已生成的 PNG 截图嵌入 |
 | `canvas/graphviz` | PlantUML/DOT → HTML |
 | `vega` | JSON → HTML（内嵌 Vega-Lite viewer）|
@@ -114,8 +119,9 @@ python3 ~/.openclaw/workspace/skills/markdown-graph-viewer/scripts/md_to_html.py
 
 **转换后的 HTML 使用方式**：
 - 双击直接在浏览器打开
-- 图表自动渲染（需要网络访问 plantuml.com / vega.github.io）
-- 离线环境下仍显示为代码文本（PlantUML 部分）
+- 滚轮缩放 + 左键拖动平移
+- PlantUML/架构图：完全离线可用（SVG 内嵌）
+- Mermaid/Vega：需要网络连接渲染
 
 ### Step 5: 整合输出
 
