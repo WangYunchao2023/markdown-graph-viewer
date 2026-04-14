@@ -77,47 +77,59 @@ def plantuml_encode(s):
 
 
 def build_plantuml_html(content: str, name: str) -> str:
-    """PlantUML .md → 可双击HTML（plantuml.com在线渲染）"""
-    
-    # 提取plantuml代码块
+    """PlantUML .md → 可双击HTML（本地 PlantUML SVG渲染，离线可用）"""
+    import subprocess
     match = re.search(r'```plantuml\s*\n(.*?)```', content, re.DOTALL)
     if not match:
         match = re.search(r'```puml\s*\n(.*?)```', content, re.DOTALL)
     puml_code = match.group(1).strip() if match else ''
-    
-    encoded = plantuml_encode(puml_code) if puml_code else ''
-    
+    svg_content = ''
+    fallback_note = '<div style="background:#f59e0b;color:white;padding:8px 16px;border-radius:4px;margin-bottom:16px;display:inline-block;font-size:12px;">🌐 PlantUML本地渲染（离线可用）</div>'
+    if puml_code:
+        try:
+            result = subprocess.run(
+                ['plantuml', '-tsvg', '-p'],
+                input=puml_code.encode('utf-8'),
+                capture_output=True, timeout=30
+            )
+            if result.returncode == 0 and result.stdout:
+                svg_content = result.stdout.decode('utf-8')
+                fallback_note = '<div style="background:#22c55e;color:white;padding:8px 16px;border-radius:4px;margin-bottom:16px;display:inline-block;font-size:12px;">✅ 本地SVG渲染成功（无需网络）</div>'
+            else:
+                err = result.stderr.decode('utf-8')[:80] if result.stderr else 'unknown'
+                fallback_note = f'<div style="background:#f97316;color:white;padding:8px 16px;border-radius:4px;margin-bottom:16px;display:inline-block;font-size:12px;">⚠️ 本地渲染失败：{err}，请检查PlantUML安装</div>'
+                encoded = plantuml_encode(puml_code)
+                svg_content = f'<img src="http://www.plantuml.com/plantuml/svg/{encoded}" style="max-width:100%;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.3);" onerror="this.parent.innerHTML=\'<p style=color:#f48771;>⚠️ 在线渲染也失败</p>\';this.remove()">'
+        except FileNotFoundError:
+            fallback_note = '<div style="background:#ef4444;color:white;padding:8px 16px;border-radius:4px;margin-bottom:16px;display:inline-block;font-size:12px;">⚠️ PlantUML未安装，改为在线渲染（需网络）</div>'
+            encoded = plantuml_encode(puml_code)
+            svg_content = f'<img src="http://www.plantuml.com/plantuml/svg/{encoded}" style="max-width:100%;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.3);" onerror="this.parent.innerHTML=\'<p style=color:#f48771;>⚠️ 渲染失败，请安装PlantUML</p>\';this.remove()">'
+        except Exception as e:
+            fallback_note = f'<div style="background:#f97316;color:white;padding:8px 16px;border-radius:4px;margin-bottom:16px;display:inline-block;font-size:12px;">⚠️ 渲染异常：{str(e)[:60]}，改为在线（需网络）</div>'
+            encoded = plantuml_encode(puml_code)
+            svg_content = f'<img src="http://www.plantuml.com/plantuml/svg/{encoded}" style="max-width:100%;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.3);">'
     return f'''<!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
 <title>{name}</title>
-<script src="https://cdn.jsdelivr.net/npm/plantuml@1.2024.0/plantuml.min.js"></script>
 <style>
 body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #1e1e1e; color: #d4d4d4; padding: 20px; margin: 0; }}
-pre {{ background: #2d2d2d; border-radius: 8px; padding: 16px; overflow-x: auto; font-size: 13px; line-height: 1.6; }}
-a {{ color: #569cd6; }}
+pre {{ background: #2d2d2d; border-radius: 8px; padding: 16px; overflow-x: auto; font-size: 13px; line-height: 1.6; margin-top: 20px; }}
+h1 {{ color: #e0e0e0; margin-bottom: 20px; }}
+h2 {{ color: #e0e0e0; margin: 20px 0 10px 0; font-size: 16px; }}
 #diagram {{ margin-top: 20px; }}
+#diagram svg {{ max-width: 100%; height: auto; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); background: white; }}
 #diagram img {{ max-width: 100%; height: auto; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }}
-.offline {{ background: #ff6b6b; color: white; padding: 8px 16px; border-radius: 4px; font-size: 12px; margin-bottom: 16px; display: inline-block; }}
 </style>
 </head>
 <body>
-<h1 style="color:#e0e0e0; margin-bottom:20px;">{name}</h1>
-<div class="offline">🌐 需要网络连接才能渲染 PlantUML 图</div>
-<pre id="code">{puml_code}</pre>
-<div id="diagram"></div>
-<script>
-var code = document.getElementById('code').textContent;
-var encoded = plantuml_encode(code);
-var img = document.createElement('img');
-img.src = 'http://www.plantuml.com/plantuml/svg/' + encoded;
-img.onerror = function() {{
-    document.getElementById('diagram').innerHTML = '<p style="color:#f48771;">⚠️ 图表渲染失败，请检查网络连接</p>';
-}};
-document.getElementById('diagram').appendChild(img);
-document.getElementById('code').style.display = 'none';
-</script>
+<h1>{name}</h1>
+{fallback_note}
+<h2>PlantUML 源码</h2>
+<pre>{puml_code}</pre>
+<h2>渲染结果</h2>
+<div id="diagram">{svg_content}</div>
 </body>
 </html>'''
 
