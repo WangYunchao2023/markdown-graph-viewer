@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Markdown 转 HTML 转换器
-版本: 3.0.2
+版本: 3.0.3
 将含 PlantUML / HTML 代码的 .md 文件转换为可直接双击打开的 .html
 支持：PlantUML / HTML / Mermaid / Vega-Lite / Infographic / Canvas
 """
@@ -74,20 +74,27 @@ def build_plantuml_html(content: str, name: str) -> str:
                 capture_output=True, timeout=30
             )
             if result.returncode == 0 and result.stdout:
-                svg_content = result.stdout.decode('utf-8')
+                svg_raw = result.stdout.decode('utf-8')
+                # 移除SVG的width/height属性和内联style，只保留viewBox，等比缩放
+                import re as _re
+                svg_raw = _re.sub(r'\s+width="[^"]*"', '', svg_raw)
+                svg_raw = _re.sub(r'\s+height="[^"]*"', '', svg_raw)
+                svg_raw = _re.sub(r'\s+style="[^"]*"', '', svg_raw)
+                svg_raw = _re.sub(r'preserveAspectRatio="[^"]*"', 'preserveAspectRatio="xMidYMid meet"', svg_raw)
+                svg_content = svg_raw
             else:
                 err = result.stderr.decode('utf-8')[:60] if result.stderr else 'unknown'
                 note = f'<div style="background:#f97316;color:white;padding:6px 14px;border-radius:4px;margin-bottom:12px;display:inline-block;font-size:12px;">⚠️ 本地失败：{err}</div>'
                 encoded = plantuml_encode(puml_code)
-                svg_content = f'<img src="http://www.plantuml.com/plantuml/svg/{encoded}" style="max-width:100%;border-radius:8px;" onerror="this.parent.innerHTML=\'<p>⚠️ 在线渲染失败</p>\';this.remove()">'
+                svg_content = f'<img src="http://www.plantuml.com/plantuml/svg/{encoded}" style="max-width:100%;max-height:100%;object-fit:contain;border-radius:8px;" onerror="this.parent.innerHTML=\'<p>⚠️ 在线渲染失败</p>\';this.remove()">'
         except FileNotFoundError:
             note = '<div style="background:#ef4444;color:white;padding:6px 14px;border-radius:4px;margin-bottom:12px;display:inline-block;font-size:12px;">⚠️ PlantUML未安装，改为在线渲染</div>'
             encoded = plantuml_encode(puml_code)
-            svg_content = f'<img src="http://www.plantuml.com/plantuml/svg/{encoded}" style="max-width:100%;border-radius:8px;">'
+            svg_content = f'<img src="http://www.plantuml.com/plantuml/svg/{encoded}" style="max-width:100%;max-height:100%;object-fit:contain;border-radius:8px;">'
         except Exception as e:
             note = f'<div style="background:#f97316;color:white;padding:6px 14px;border-radius:4px;margin-bottom:12px;display:inline-block;font-size:12px;">⚠️ 异常：{str(e)[:60]}</div>'
             encoded = plantuml_encode(puml_code)
-            svg_content = f'<img src="http://www.plantuml.com/plantuml/svg/{encoded}" style="max-width:100%;border-radius:8px;">'
+            svg_content = f'<img src="http://www.plantuml.com/plantuml/svg/{encoded}" style="max-width:100%;max-height:100%;object-fit:contain;border-radius:8px;">'
     return f'''<!DOCTYPE html>
 <html>
 <head>
@@ -95,18 +102,23 @@ def build_plantuml_html(content: str, name: str) -> str:
 <title>{name}</title>
 <script src="https://cdn.jsdelivr.net/npm/svg-pan-zoom@3.6.1/dist/svg-pan-zoom.min.js"></script>
 <style>
-body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #222; padding: 0; margin: 0; overflow: hidden; height: 100vh; }}
-h1 {{ color: #e0e0e0; margin: 12px 16px; font-size: 16px; position: absolute; top: 0; left: 0; z-index: 10; }}
-.note {{ background: rgba(34,197,94,0.9); color: white; padding: 4px 10px; border-radius: 4px; font-size: 11px; margin-left: 16px; }}
-#diagram {{ width: 100vw; height: 100vh; cursor: grab; }}
+* {{ margin: 0; padding: 0; box-sizing: border-box; }}
+html, body {{ width: 100%; height: 100%; overflow: hidden; background: #222; }}
+.header {{ position: fixed; top: 0; left: 0; right: 0; z-index: 10; padding: 10px 16px; background: linear-gradient(to bottom, rgba(34,34,34,0.9), transparent); display: flex; align-items: center; gap: 10px; }}
+h1 {{ color: #e0e0e0; font-size: 16px; font-weight: normal; }}
+.note {{ background: rgba(34,197,94,0.9); color: white; padding: 4px 10px; border-radius: 4px; font-size: 11px; }}
+#diagram {{ width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center; cursor: grab; overflow: hidden; }}
 #diagram:active {{ cursor: grabbing; }}
-#diagram svg {{ width: 100% !important; height: 100% !important; border-radius: 0; box-shadow: none; background: white; display: block; }}
-#diagram img {{ width: 100%; height: 100%; object-fit: contain; border-radius: 0; box-shadow: none; }}
-.hint {{ position: fixed; bottom: 12px; right: 12px; background: rgba(0,0,0,0.6); color: #aaa; font-size: 11px; padding: 6px 10px; border-radius: 4px; z-index: 10; }}
+#diagram svg {{ width: 100%; height: 100%; max-width: 100%; max-height: 100%; display: block; }}
+#diagram img {{ max-width: 95vw; max-height: 95vh; object-fit: contain; border-radius: 8px; }}
+.hint {{ position: fixed; bottom: 12px; right: 12px; background: rgba(0,0,0,0.6); color: #aaa; font-size: 11px; padding: 6px 10px; border-radius: 4px; }}
 </style>
 </head>
 <body>
-<h1>{name} <span class="note">{note}</span></h1>
+<div class="header">
+  <h1>{name}</h1>
+  <span class="note">{note}</span>
+</div>
 <div id="diagram">{svg_content}</div>
 <div class="hint">滚轮缩放 · 左键拖动平移</div>
 <script>
@@ -115,8 +127,9 @@ document.addEventListener('DOMContentLoaded', function() {{
   if (el) {{
     svgPanZoom(el, {{
       zoomEnabled: true, panEnabled: true, controlIconsEnabled: false,
-      fit: true, center: true, zoomScaleSensitivity: 0.4,
-      minZoom: 0.1, maxZoom: 20
+      fit: true, center: true, zoomScaleSensitivity: 0.5,
+      minZoom: 0.1, maxZoom: 50,
+      viewportSelector: '#diagram'
     }});
   }}
 }});
@@ -140,18 +153,23 @@ def build_mermaid_html(content: str, name: str) -> str:
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/svg-pan-zoom@3.6.1/dist/svg-pan-zoom.min.js"></script>
 <style>
-body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #222; padding: 0; margin: 0; overflow: hidden; height: 100vh; }}
-h1 {{ color: #e0e0e0; margin: 12px 16px; font-size: 16px; position: absolute; top: 0; left: 0; z-index: 10; }}
-.note {{ background: rgba(59,130,246,0.9); color: white; padding: 4px 10px; border-radius: 4px; font-size: 11px; margin-left: 10px; }}
-#diagram {{ width: 100vw; height: 100vh; cursor: grab; }}
+* {{ margin: 0; padding: 0; box-sizing: border-box; }}
+html, body {{ width: 100%; height: 100%; overflow: hidden; background: #222; }}
+.header {{ position: fixed; top: 0; left: 0; right: 0; z-index: 10; padding: 10px 16px; background: linear-gradient(to bottom, rgba(34,34,34,0.9), transparent); display: flex; align-items: center; gap: 10px; }}
+h1 {{ color: #e0e0e0; font-size: 16px; font-weight: normal; }}
+.note {{ background: rgba(59,130,246,0.9); color: white; padding: 4px 10px; border-radius: 4px; font-size: 11px; }}
+#diagram {{ width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center; cursor: grab; overflow: hidden; }}
 #diagram:active {{ cursor: grabbing; }}
-.mermaid {{ width: 100% !important; height: 100% !important; }}
-.mermaid svg {{ width: 100% !important; height: 100% !important; }}
-.hint {{ position: fixed; bottom: 12px; right: 12px; background: rgba(0,0,0,0.6); color: #aaa; font-size: 11px; padding: 6px 10px; border-radius: 4px; z-index: 10; }}
+.mermaid {{ width: auto !important; height: auto !important; }}
+.mermaid svg {{ width: auto !important; height: auto !important; max-width: 95vw; max-height: 95vh; display: block; }}
+.hint {{ position: fixed; bottom: 12px; right: 12px; background: rgba(0,0,0,0.6); color: #aaa; font-size: 11px; padding: 6px 10px; border-radius: 4px; }}
 </style>
 </head>
 <body>
-<h1>{name} <span class="note">🌐 需要网络</span></h1>
+<div class="header">
+  <h1>{name}</h1>
+  <span class="note">🌐 需要网络</span>
+</div>
 <div id="diagram"><div class="mermaid">{escaped}</div></div>
 <div class="hint">滚轮缩放 · 左键拖动平移</div>
 <script>
@@ -159,7 +177,7 @@ mermaid.initialize({{ startOnLoad: false, theme: 'dark' }});
 mermaid.run().then(function() {{
   var el = document.querySelector('#diagram .mermaid svg');
   if (el) {{
-    svgPanZoom(el, {{ zoomEnabled: true, panEnabled: true, controlIconsEnabled: false, fit: true, center: true, zoomScaleSensitivity: 0.4, minZoom: 0.05, maxZoom: 50 }});
+    svgPanZoom(el, {{ zoomEnabled: true, panEnabled: true, controlIconsEnabled: false, fit: false, center: true, zoomScaleSensitivity: 0.5, minZoom: 0.05, maxZoom: 50 }});
   }}
 }});
 </script>
@@ -194,21 +212,30 @@ def build_pure_html(content: str, name: str) -> str:
 <title>{name}</title>
 <script src="https://cdn.jsdelivr.net/npm/svg-pan-zoom@3.6.1/dist/svg-pan-zoom.min.js"></script>
 <style>
-body {{ background: #f0f4f8; margin: 0; padding: 0; overflow: hidden; height: 100vh; display: flex; align-items: center; justify-content: center; }}
-{style_content}
-.svg-container {{ width: 100vw; height: 100vh; cursor: grab; overflow: hidden; }}
+* {{ margin: 0; padding: 0; box-sizing: border-box; }}
+html, body {{ width: 100%; height: 100%; overflow: hidden; background: #f0f4f8; }}
+.header {{ position: fixed; top: 0; left: 0; right: 0; z-index: 10; padding: 10px 16px; background: linear-gradient(to bottom, rgba(240,244,248,0.95), transparent); display: flex; align-items: center; gap: 10px; }}
+h1 {{ color: #333; font-size: 16px; font-weight: normal; }}
+.note {{ background: rgba(59,130,246,0.9); color: white; padding: 4px 10px; border-radius: 4px; font-size: 11px; }}
+.svg-container {{ width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center; cursor: grab; overflow: hidden; }}
 .svg-container:active {{ cursor: grabbing; }}
+.svg-container svg {{ width: auto; height: auto; max-width: 95vw; max-height: 95vh; display: block; }}
 .hint {{ position: fixed; bottom: 12px; right: 12px; background: rgba(0,0,0,0.6); color: #aaa; font-size: 11px; padding: 6px 10px; border-radius: 4px; }}
+{style_content}
 </style>
 </head>
 <body>
+<div class="header">
+  <h1>{name}</h1>
+  <span class="note">架构图</span>
+</div>
 <div class="svg-container" id="container">{html_block}</div>
 <div class="hint">滚轮缩放 · 左键拖动平移</div>
 <script>
 document.addEventListener('DOMContentLoaded', function() {{
   var el = document.querySelector('.svg-container svg');
   if (el) {{
-    svgPanZoom(el, {{ zoomEnabled: true, panEnabled: true, controlIconsEnabled: false, fit: true, center: true, zoomScaleSensitivity: 0.4, minZoom: 0.1, maxZoom: 20 }});
+    svgPanZoom(el, {{ zoomEnabled: true, panEnabled: true, controlIconsEnabled: false, fit: true, center: true, zoomScaleSensitivity: 0.5, minZoom: 0.1, maxZoom: 50 }});
   }}
 }});
 </script>
@@ -232,24 +259,30 @@ def build_vega_html(content: str, name: str) -> str:
 <script src="https://cdn.jsdelivr.net/npm/vega-lite@5/build/vega-lite.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/vega-embed@6/build/vega-embed.min.js"></script>
 <style>
-body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #222; padding: 0; margin: 0; overflow: hidden; height: 100vh; }}
-h1 {{ color: #e0e0e0; margin: 12px 16px; font-size: 16px; position: absolute; top: 0; left: 0; z-index: 10; }}
-.note {{ background: rgba(245,158,11,0.9); color: white; padding: 4px 10px; border-radius: 4px; font-size: 11px; margin-left: 10px; }}
-#vis {{ width: 100vw; height: 100vh; cursor: grab; }}
+* {{ margin: 0; padding: 0; box-sizing: border-box; }}
+html, body {{ width: 100%; height: 100%; overflow: hidden; background: #222; }}
+.header {{ position: fixed; top: 0; left: 0; right: 0; z-index: 10; padding: 10px 16px; background: linear-gradient(to bottom, rgba(34,34,34,0.9), transparent); display: flex; align-items: center; gap: 10px; }}
+h1 {{ color: #e0e0e0; font-size: 16px; font-weight: normal; }}
+.note {{ background: rgba(245,158,11,0.9); color: white; padding: 4px 10px; border-radius: 4px; font-size: 11px; }}
+#vis {{ width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center; cursor: grab; overflow: hidden; }}
 #vis:active {{ cursor: grabbing; }}
-.hint {{ position: fixed; bottom: 12px; right: 12px; background: rgba(0,0,0,0.6); color: #aaa; font-size: 11px; padding: 6px 10px; border-radius: 4px; z-index: 10; }}
+#vis svg {{ width: auto; height: auto; max-width: 95vw; max-height: 95vh; }}
+.hint {{ position: fixed; bottom: 12px; right: 12px; background: rgba(0,0,0,0.6); color: #aaa; font-size: 11px; padding: 6px 10px; border-radius: 4px; }}
 </style>
 </head>
 <body>
-<h1>{name} <span class="note">🌐 需要网络</span></h1>
+<div class="header">
+  <h1>{name}</h1>
+  <span class="note">🌐 需要网络</span>
+</div>
 <div id="vis"></div>
 <div class="hint">滚轮缩放 · 左键拖动平移</div>
 <script>
 var spec = JSON.parse('{escaped}');
-vegaEmbed('#vis', spec, {{ actions: {{export: true, source: false, editor: false}}, scaleFactor: 2 }}).then(function(result) {{
-  var el = result.spec && document.querySelector('#vis svg');
+vegaEmbed('#vis', spec, {{ actions: {{export: true, source: false, editor: false}}, scaleFactor: 1 }}).then(function(result) {{
+  var el = document.querySelector('#vis svg');
   if (el) {{
-    svgPanZoom(el, {{ zoomEnabled: true, panEnabled: true, controlIconsEnabled: false, fit: true, center: true, zoomScaleSensitivity: 0.4, minZoom: 0.1, maxZoom: 20 }});
+    svgPanZoom(el, {{ zoomEnabled: true, panEnabled: true, controlIconsEnabled: false, fit: true, center: true, zoomScaleSensitivity: 0.5, minZoom: 0.1, maxZoom: 50 }});
   }}
 }}).catch(console.error);
 </script>
