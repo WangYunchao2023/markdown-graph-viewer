@@ -1,20 +1,16 @@
 #!/usr/bin/env python3
 """
 Markdown 转 HTML 转换器
-版本: 3.0.3
-将含 PlantUML / HTML 代码的 .md 文件转换为可直接双击打开的 .html
-支持：PlantUML / HTML / Mermaid / Vega-Lite / Infographic / Canvas
+版本: 3.0.4
+将含 PlantUML / HTML / Mermaid / Vega / Canvas / Infographic 的 .md 转换为可双击的 .html
+特性：全屏图 + 滚轮缩放 + 左键拖动平移，原比例不变形
 """
 
-import argparse
-import re
-import os
-import sys
-import subprocess
+import argparse, re, os, sys, subprocess
 
+# ─── CLI ──────────────────────────────────────────────────────────────────────
 
 def md_to_html(input_path: str, output_path: str = None) -> bool:
-    """将 .md 文件转换为可双击打开的 HTML（只显示渲染图，无源码）"""
     if output_path is None:
         output_path = input_path.rstrip('.md') + '.html'
     try:
@@ -24,18 +20,20 @@ def md_to_html(input_path: str, output_path: str = None) -> bool:
         print(f"读取文件失败: {e}", file=sys.stderr)
         return False
 
+    name = os.path.basename(input_path).replace('.md', '')
+
     if '```plantuml' in content or '@startuml' in content:
-        html = build_plantuml_html(content, os.path.basename(input_path).replace('.md', ''))
+        html = build_plantuml_html(content, name)
     elif '```mermaid' in content:
-        html = build_mermaid_html(content, os.path.basename(input_path).replace('.md', ''))
+        html = build_mermaid_html(content, name)
     elif '<div' in content and 'style=' in content:
-        html = build_pure_html(content, os.path.basename(input_path).replace('.md', ''))
+        html = build_pure_html(content, name)
     elif '```vega' in content or '```vega-lite' in content:
-        html = build_vega_html(content, os.path.basename(input_path).replace('.md', ''))
+        html = build_vega_html(content, name)
     elif '```infographic' in content:
-        html = build_infographic_html(content, os.path.basename(input_path).replace('.md', ''), input_path)
+        html = build_infographic_html(content, name, input_path)
     elif '```canvas' in content or '"nodes":' in content:
-        html = build_canvas_html(content, os.path.basename(input_path).replace('.md', ''))
+        html = build_canvas_html(content, name)
     else:
         print(f"无法识别的图表类型: {input_path}", file=sys.stderr)
         return False
@@ -50,22 +48,21 @@ def md_to_html(input_path: str, output_path: str = None) -> bool:
         return False
 
 
-# ─── PlantUML ───────────────────────────────────────────────────────────────────
+# ─── PlantUML ─────────────────────────────────────────────────────────────────
 
 def plantuml_encode(s):
-    """PlantUML URL encoder"""
     import base64, zlib
     return base64.b64encode(zlib.compress(bytes(s, 'utf-8'))[2:-4]).decode('utf-8')
 
 
 def build_plantuml_html(content: str, name: str) -> str:
-    """PlantUML .md → 只显示渲染图（无源码）"""
     match = re.search(r'```plantuml\s*\n(.*?)```', content, re.DOTALL)
     if not match:
         match = re.search(r'```puml\s*\n(.*?)```', content, re.DOTALL)
     puml_code = match.group(1).strip() if match else ''
-    svg_content = ''
-    note = '<div style="background:#22c55e;color:white;padding:6px 14px;border-radius:4px;margin-bottom:12px;display:inline-block;font-size:12px;">✅ SVG渲染成功</div>'
+
+    svg_block = ''
+    note = '<span class="note ok">✅ 本地SVG渲染成功</span>'
     if puml_code:
         try:
             result = subprocess.run(
@@ -75,26 +72,27 @@ def build_plantuml_html(content: str, name: str) -> str:
             )
             if result.returncode == 0 and result.stdout:
                 svg_raw = result.stdout.decode('utf-8')
-                # 移除SVG的width/height属性和内联style，只保留viewBox，等比缩放
-                import re as _re
-                svg_raw = _re.sub(r'\s+width="[^"]*"', '', svg_raw)
-                svg_raw = _re.sub(r'\s+height="[^"]*"', '', svg_raw)
-                svg_raw = _re.sub(r'\s+style="[^"]*"', '', svg_raw)
-                svg_raw = _re.sub(r'preserveAspectRatio="[^"]*"', 'preserveAspectRatio="xMidYMid meet"', svg_raw)
-                svg_content = svg_raw
+                # 清理SVG：去掉固定宽高/内联style，强制等比
+                svg_raw = re.sub(r'\s+width="[^"]*"', '', svg_raw)
+                svg_raw = re.sub(r'\s+height="[^"]*"', '', svg_raw)
+                svg_raw = re.sub(r'\s+style="[^"]*"', '', svg_raw)
+                svg_raw = re.sub(r'preserveAspectRatio="[^"]*"',
+                                 'preserveAspectRatio="xMidYMid meet"', svg_raw)
+                svg_block = svg_raw
             else:
-                err = result.stderr.decode('utf-8')[:60] if result.stderr else 'unknown'
-                note = f'<div style="background:#f97316;color:white;padding:6px 14px;border-radius:4px;margin-bottom:12px;display:inline-block;font-size:12px;">⚠️ 本地失败：{err}</div>'
-                encoded = plantuml_encode(puml_code)
-                svg_content = f'<img src="http://www.plantuml.com/plantuml/svg/{encoded}" style="max-width:100%;max-height:100%;object-fit:contain;border-radius:8px;" onerror="this.parent.innerHTML=\'<p>⚠️ 在线渲染失败</p>\';this.remove()">'
+                err = (result.stderr.decode('utf-8') or 'unknown')[:60]
+                note = f'<span class="note warn">⚠️ 本地失败：{err}</span>'
+                enc = plantuml_encode(puml_code)
+                svg_block = f'<img src="http://www.plantuml.com/plantuml/svg/{enc}" class="diagram-img" onerror="this.parent__outer.innerHTML=\'<p class=err>⚠️ 渲染失败</p>\'"/>'
         except FileNotFoundError:
-            note = '<div style="background:#ef4444;color:white;padding:6px 14px;border-radius:4px;margin-bottom:12px;display:inline-block;font-size:12px;">⚠️ PlantUML未安装，改为在线渲染</div>'
-            encoded = plantuml_encode(puml_code)
-            svg_content = f'<img src="http://www.plantuml.com/plantuml/svg/{encoded}" style="max-width:100%;max-height:100%;object-fit:contain;border-radius:8px;">'
+            note = '<span class="note warn">⚠️ PlantUML未安装，改为在线渲染（需网络）</span>'
+            enc = plantuml_encode(puml_code)
+            svg_block = f'<img src="http://www.plantuml.com/plantuml/svg/{enc}" class="diagram-img"/>'
         except Exception as e:
-            note = f'<div style="background:#f97316;color:white;padding:6px 14px;border-radius:4px;margin-bottom:12px;display:inline-block;font-size:12px;">⚠️ 异常：{str(e)[:60]}</div>'
-            encoded = plantuml_encode(puml_code)
-            svg_content = f'<img src="http://www.plantuml.com/plantuml/svg/{encoded}" style="max-width:100%;max-height:100%;object-fit:contain;border-radius:8px;">'
+            note = f'<span class="note warn">⚠️ 异常：{str(e)[:50]}</span>'
+            enc = plantuml_encode(puml_code)
+            svg_block = f'<img src="http://www.plantuml.com/plantuml/svg/{enc}" class="diagram-img"/>'
+
     return f'''<!DOCTYPE html>
 <html>
 <head>
@@ -103,33 +101,67 @@ def build_plantuml_html(content: str, name: str) -> str:
 <script src="https://cdn.jsdelivr.net/npm/svg-pan-zoom@3.6.1/dist/svg-pan-zoom.min.js"></script>
 <style>
 * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-html, body {{ width: 100%; height: 100%; overflow: hidden; background: #222; }}
-.header {{ position: fixed; top: 0; left: 0; right: 0; z-index: 10; padding: 10px 16px; background: linear-gradient(to bottom, rgba(34,34,34,0.9), transparent); display: flex; align-items: center; gap: 10px; }}
+html, body {{ width: 100%; height: 100%; overflow: hidden; background: #1e1e1e; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }}
+.wrap {{ width: 100vw; height: 100vh; overflow: hidden; cursor: grab; position: relative; }}
+.wrap:active {{ cursor: grabbing; }}
+.inner {{ display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; }}
+.header {{ position: absolute; top: 0; left: 0; right: 0; z-index: 10; padding: 12px 16px; background: linear-gradient(to bottom, rgba(30,30,30,0.95), transparent); display: flex; align-items: center; gap: 10px; pointer-events: none; }}
 h1 {{ color: #e0e0e0; font-size: 16px; font-weight: normal; }}
-.note {{ background: rgba(34,197,94,0.9); color: white; padding: 4px 10px; border-radius: 4px; font-size: 11px; }}
-#diagram {{ width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center; cursor: grab; overflow: hidden; }}
-#diagram:active {{ cursor: grabbing; }}
-#diagram svg {{ width: 100%; height: 100%; max-width: 100%; max-height: 100%; display: block; }}
-#diagram img {{ max-width: 95vw; max-height: 95vh; object-fit: contain; border-radius: 8px; }}
-.hint {{ position: fixed; bottom: 12px; right: 12px; background: rgba(0,0,0,0.6); color: #aaa; font-size: 11px; padding: 6px 10px; border-radius: 4px; }}
+.note {{ padding: 3px 10px; border-radius: 4px; font-size: 11px; }}
+.note.ok {{ background: rgba(34,197,94,0.9); color: white; }}
+.note.warn {{ background: rgba(249,115,22,0.9); color: white; }}
+.inner svg {{ max-width: 95vw; max-height: 95vh; display: block; }}
+.inner img.diagram-img {{ max-width: 95vw; max-height: 95vh; border-radius: 4px; }}
+.hint {{ position: absolute; bottom: 12px; right: 12px; background: rgba(0,0,0,0.55); color: #aaa; font-size: 11px; padding: 5px 10px; border-radius: 4px; pointer-events: none; }}
+.err {{ color: #f48771; padding: 20px; font-size: 14px; }}
 </style>
 </head>
 <body>
-<div class="header">
-  <h1>{name}</h1>
-  <span class="note">{note}</span>
+<div class="wrap" id="wrap">
+  <div class="header">
+    <h1>{name}</h1>
+    {note}
+  </div>
+  <div class="inner">
+    {svg_block}
+  </div>
+  <div class="hint">滚轮缩放 · 左键拖动平移</div>
 </div>
-<div id="diagram">{svg_content}</div>
-<div class="hint">滚轮缩放 · 左键拖动平移</div>
 <script>
 document.addEventListener('DOMContentLoaded', function() {{
-  var el = document.querySelector('#diagram svg');
-  if (el) {{
-    svgPanZoom(el, {{
-      zoomEnabled: true, panEnabled: true, controlIconsEnabled: false,
-      fit: true, center: true, zoomScaleSensitivity: 0.5,
-      minZoom: 0.1, maxZoom: 50,
-      viewportSelector: '#diagram'
+  var wrap = document.getElementById('wrap');
+  var svg = wrap.querySelector('svg');
+  if (svg) {{
+    svgPanZoom(svg, {{
+      viewportId: 'diagram-viewport',
+      zoomEnabled: true,
+      panEnabled: true,
+      controlIconsEnabled: false,
+      fit: true,
+      center: true,
+      zoomScaleSensitivity: 0.5,
+      minZoom: 0.1,
+      maxZoom: 50,
+      // 关键：事件绑定在svg上，但移动的是svg的transform
+      eventsListener: function(e) {{
+        // 确保鼠标事件能穿透header到达svg
+        return true;
+      }}
+    }});
+  }}
+  // 图片降级方案也挂上panzoom
+  var img = wrap.querySelector('img.diagram-img');
+  if (img) {{
+    svgPanZoom(img, {{
+      viewportId: 'diagram-viewport',
+      zoomEnabled: true,
+      panEnabled: true,
+      controlIconsEnabled: false,
+      fit: true,
+      center: true,
+      zoomScaleSensitivity: 0.5,
+      minZoom: 0.1,
+      maxZoom: 50
     }});
   }}
 }});
@@ -138,13 +170,12 @@ document.addEventListener('DOMContentLoaded', function() {{
 </html>'''
 
 
-# ─── Mermaid ────────────────────────────────────────────────────────────────────
+# ─── Mermaid ──────────────────────────────────────────────────────────────────
 
 def build_mermaid_html(content: str, name: str) -> str:
-    """Mermaid .md → 只显示渲染图（无源码）"""
     match = re.search(r'```mermaid\s*\n(.*?)```', content, re.DOTALL)
     mermaid_code = match.group(1).strip() if match else ''
-    escaped = mermaid_code.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;')
+    esc = mermaid_code.replace('&','&amp;').replace('<','&lt;').replace('>','&gt;').replace('"','&quot;')
     return f'''<!DOCTYPE html>
 <html>
 <head>
@@ -154,30 +185,39 @@ def build_mermaid_html(content: str, name: str) -> str:
 <script src="https://cdn.jsdelivr.net/npm/svg-pan-zoom@3.6.1/dist/svg-pan-zoom.min.js"></script>
 <style>
 * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-html, body {{ width: 100%; height: 100%; overflow: hidden; background: #222; }}
-.header {{ position: fixed; top: 0; left: 0; right: 0; z-index: 10; padding: 10px 16px; background: linear-gradient(to bottom, rgba(34,34,34,0.9), transparent); display: flex; align-items: center; gap: 10px; }}
+html, body {{ width: 100%; height: 100%; overflow: hidden; background: #1e1e1e; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }}
+.wrap {{ width: 100vw; height: 100vh; overflow: hidden; cursor: grab; position: relative; }}
+.wrap:active {{ cursor: grabbing; }}
+.inner {{ display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; }}
+.header {{ position: absolute; top: 0; left: 0; right: 0; z-index: 10; padding: 12px 16px; background: linear-gradient(to bottom, rgba(30,30,30,0.95), transparent); display: flex; align-items: center; gap: 10px; pointer-events: none; }}
 h1 {{ color: #e0e0e0; font-size: 16px; font-weight: normal; }}
-.note {{ background: rgba(59,130,246,0.9); color: white; padding: 4px 10px; border-radius: 4px; font-size: 11px; }}
-#diagram {{ width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center; cursor: grab; overflow: hidden; }}
-#diagram:active {{ cursor: grabbing; }}
-.mermaid {{ width: auto !important; height: auto !important; }}
-.mermaid svg {{ width: auto !important; height: auto !important; max-width: 95vw; max-height: 95vh; display: block; }}
-.hint {{ position: fixed; bottom: 12px; right: 12px; background: rgba(0,0,0,0.6); color: #aaa; font-size: 11px; padding: 6px 10px; border-radius: 4px; }}
+.note {{ padding: 3px 10px; border-radius: 4px; font-size: 11px; background: rgba(59,130,246,0.9); color: white; }}
+.inner svg {{ max-width: 90vw; max-height: 90vh; }}
+.hint {{ position: absolute; bottom: 12px; right: 12px; background: rgba(0,0,0,0.55); color: #aaa; font-size: 11px; padding: 5px 10px; border-radius: 4px; pointer-events: none; }}
 </style>
 </head>
 <body>
-<div class="header">
-  <h1>{name}</h1>
-  <span class="note">🌐 需要网络</span>
+<div class="wrap" id="wrap">
+  <div class="header">
+    <h1>{name}</h1>
+    <span class="note">🌐 需要网络</span>
+  </div>
+  <div class="inner">
+    <div class="mermaid">{esc}</div>
+  </div>
+  <div class="hint">滚轮缩放 · 左键拖动平移</div>
 </div>
-<div id="diagram"><div class="mermaid">{escaped}</div></div>
-<div class="hint">滚轮缩放 · 左键拖动平移</div>
 <script>
 mermaid.initialize({{ startOnLoad: false, theme: 'dark' }});
 mermaid.run().then(function() {{
-  var el = document.querySelector('#diagram .mermaid svg');
-  if (el) {{
-    svgPanZoom(el, {{ zoomEnabled: true, panEnabled: true, controlIconsEnabled: false, fit: false, center: true, zoomScaleSensitivity: 0.5, minZoom: 0.05, maxZoom: 50 }});
+  var svg = document.querySelector('.mermaid svg');
+  if (svg) {{
+    svgPanZoom(svg, {{
+      viewportId: 'diagram-viewport',
+      zoomEnabled: true, panEnabled: true, controlIconsEnabled: false,
+      fit: true, center: true, zoomScaleSensitivity: 0.5,
+      minZoom: 0.05, maxZoom: 50
+    }});
   }}
 }});
 </script>
@@ -185,10 +225,9 @@ mermaid.run().then(function() {{
 </html>'''
 
 
-# ─── 纯 HTML ──────────────────────────────────────────────────────────────────
+# ─── Pure HTML (架构图等) ──────────────────────────────────────────────────────
 
 def build_pure_html(content: str, name: str) -> str:
-    """HTML .md → 独立HTML文件"""
     match = re.search(r'(<div style="width:.*)', content, re.DOTALL)
     if not match:
         return f'<!DOCTYPE html><html><head><meta charset="UTF-8"><title>{name}</title></head><body><pre>{content}</pre></body></html>'
@@ -213,29 +252,39 @@ def build_pure_html(content: str, name: str) -> str:
 <script src="https://cdn.jsdelivr.net/npm/svg-pan-zoom@3.6.1/dist/svg-pan-zoom.min.js"></script>
 <style>
 * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-html, body {{ width: 100%; height: 100%; overflow: hidden; background: #f0f4f8; }}
-.header {{ position: fixed; top: 0; left: 0; right: 0; z-index: 10; padding: 10px 16px; background: linear-gradient(to bottom, rgba(240,244,248,0.95), transparent); display: flex; align-items: center; gap: 10px; }}
+html, body {{ width: 100%; height: 100%; overflow: hidden; background: #f0f4f8; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }}
+.wrap {{ width: 100vw; height: 100vh; overflow: hidden; cursor: grab; position: relative; }}
+.wrap:active {{ cursor: grabbing; }}
+.inner {{ display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; }}
+.inner svg {{ max-width: 95vw; max-height: 95vh; }}
+.header {{ position: absolute; top: 0; left: 0; right: 0; z-index: 10; padding: 12px 16px; background: linear-gradient(to bottom, rgba(240,244,248,0.95), transparent); display: flex; align-items: center; gap: 10px; pointer-events: none; }}
 h1 {{ color: #333; font-size: 16px; font-weight: normal; }}
-.note {{ background: rgba(59,130,246,0.9); color: white; padding: 4px 10px; border-radius: 4px; font-size: 11px; }}
-.svg-container {{ width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center; cursor: grab; overflow: hidden; }}
-.svg-container:active {{ cursor: grabbing; }}
-.svg-container svg {{ width: auto; height: auto; max-width: 95vw; max-height: 95vh; display: block; }}
-.hint {{ position: fixed; bottom: 12px; right: 12px; background: rgba(0,0,0,0.6); color: #aaa; font-size: 11px; padding: 6px 10px; border-radius: 4px; }}
+.note {{ padding: 3px 10px; border-radius: 4px; font-size: 11px; background: rgba(59,130,246,0.9); color: white; }}
+.hint {{ position: absolute; bottom: 12px; right: 12px; background: rgba(0,0,0,0.4); color: #aaa; font-size: 11px; padding: 5px 10px; border-radius: 4px; pointer-events: none; }}
 {style_content}
 </style>
 </head>
 <body>
-<div class="header">
-  <h1>{name}</h1>
-  <span class="note">架构图</span>
+<div class="wrap" id="wrap">
+  <div class="header">
+    <h1>{name}</h1>
+    <span class="note">架构图</span>
+  </div>
+  <div class="inner">
+    {html_block}
+  </div>
+  <div class="hint">滚轮缩放 · 左键拖动平移</div>
 </div>
-<div class="svg-container" id="container">{html_block}</div>
-<div class="hint">滚轮缩放 · 左键拖动平移</div>
 <script>
 document.addEventListener('DOMContentLoaded', function() {{
-  var el = document.querySelector('.svg-container svg');
-  if (el) {{
-    svgPanZoom(el, {{ zoomEnabled: true, panEnabled: true, controlIconsEnabled: false, fit: true, center: true, zoomScaleSensitivity: 0.5, minZoom: 0.1, maxZoom: 50 }});
+  var svg = document.querySelector('.inner svg');
+  if (svg) {{
+    svgPanZoom(svg, {{
+      viewportId: 'diagram-viewport',
+      zoomEnabled: true, panEnabled: true, controlIconsEnabled: false,
+      fit: true, center: true, zoomScaleSensitivity: 0.5,
+      minZoom: 0.1, maxZoom: 50
+    }});
   }}
 }});
 </script>
@@ -246,10 +295,9 @@ document.addEventListener('DOMContentLoaded', function() {{
 # ─── Vega ─────────────────────────────────────────────────────────────────────
 
 def build_vega_html(content: str, name: str) -> str:
-    """Vega/Vega-Lite .md → 独立HTML"""
     match = re.search(r'```(?:vega-lite|vega)\s*\n(.*?)```', content, re.DOTALL)
     vega_json = match.group(1).strip() if match else '{}'
-    escaped = vega_json.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;')
+    esc = vega_json.replace('&','&amp;').replace('<','&lt;').replace('>','&gt;').replace('"','&quot;')
     return f'''<!DOCTYPE html>
 <html>
 <head>
@@ -258,31 +306,42 @@ def build_vega_html(content: str, name: str) -> str:
 <script src="https://cdn.jsdelivr.net/npm/vega@5/build/vega.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/vega-lite@5/build/vega-lite.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/vega-embed@6/build/vega-embed.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/svg-pan-zoom@3.6.1/dist/svg-pan-zoom.min.js"></script>
 <style>
 * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-html, body {{ width: 100%; height: 100%; overflow: hidden; background: #222; }}
-.header {{ position: fixed; top: 0; left: 0; right: 0; z-index: 10; padding: 10px 16px; background: linear-gradient(to bottom, rgba(34,34,34,0.9), transparent); display: flex; align-items: center; gap: 10px; }}
+html, body {{ width: 100%; height: 100%; overflow: hidden; background: #1e1e1e; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }}
+.wrap {{ width: 100vw; height: 100vh; overflow: hidden; cursor: grab; position: relative; }}
+.wrap:active {{ cursor: grabbing; }}
+.inner {{ display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; }}
+.header {{ position: absolute; top: 0; left: 0; right: 0; z-index: 10; padding: 12px 16px; background: linear-gradient(to bottom, rgba(30,30,30,0.95), transparent); display: flex; align-items: center; gap: 10px; pointer-events: none; }}
 h1 {{ color: #e0e0e0; font-size: 16px; font-weight: normal; }}
-.note {{ background: rgba(245,158,11,0.9); color: white; padding: 4px 10px; border-radius: 4px; font-size: 11px; }}
-#vis {{ width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center; cursor: grab; overflow: hidden; }}
-#vis:active {{ cursor: grabbing; }}
-#vis svg {{ width: auto; height: auto; max-width: 95vw; max-height: 95vh; }}
-.hint {{ position: fixed; bottom: 12px; right: 12px; background: rgba(0,0,0,0.6); color: #aaa; font-size: 11px; padding: 6px 10px; border-radius: 4px; }}
+.note {{ padding: 3px 10px; border-radius: 4px; font-size: 11px; background: rgba(245,158,11,0.9); color: white; }}
+#vis {{ width: 90vw; height: 85vh; }}
+.hint {{ position: absolute; bottom: 12px; right: 12px; background: rgba(0,0,0,0.55); color: #aaa; font-size: 11px; padding: 5px 10px; border-radius: 4px; pointer-events: none; }}
 </style>
 </head>
 <body>
-<div class="header">
-  <h1>{name}</h1>
-  <span class="note">🌐 需要网络</span>
+<div class="wrap" id="wrap">
+  <div class="header">
+    <h1>{name}</h1>
+    <span class="note">🌐 需要网络</span>
+  </div>
+  <div class="inner">
+    <div id="vis"></div>
+  </div>
+  <div class="hint">滚轮缩放 · 左键拖动平移</div>
 </div>
-<div id="vis"></div>
-<div class="hint">滚轮缩放 · 左键拖动平移</div>
 <script>
-var spec = JSON.parse('{escaped}');
-vegaEmbed('#vis', spec, {{ actions: {{export: true, source: false, editor: false}}, scaleFactor: 1 }}).then(function(result) {{
-  var el = document.querySelector('#vis svg');
-  if (el) {{
-    svgPanZoom(el, {{ zoomEnabled: true, panEnabled: true, controlIconsEnabled: false, fit: true, center: true, zoomScaleSensitivity: 0.5, minZoom: 0.1, maxZoom: 50 }});
+var spec = JSON.parse('{esc}');
+vegaEmbed('#vis', spec, {{ actions: {{export: true, source: false, editor: false}} }}).then(function(result) {{
+  var svg = document.querySelector('#vis svg');
+  if (svg) {{
+    svgPanZoom(svg, {{
+      viewportId: 'diagram-viewport',
+      zoomEnabled: true, panEnabled: true, controlIconsEnabled: false,
+      fit: true, center: true, zoomScaleSensitivity: 0.5,
+      minZoom: 0.1, maxZoom: 50
+    }});
   }}
 }}).catch(console.error);
 </script>
@@ -293,7 +352,6 @@ vegaEmbed('#vis', spec, {{ actions: {{export: true, source: false, editor: false
 # ─── Infographic ─────────────────────────────────────────────────────────────
 
 def build_infographic_html(content: str, name: str, input_path: str) -> str:
-    """Infographic .md → HTML（嵌入PNG截图）"""
     png_path = input_path.replace('.md', '_截图.png')
     png_name = os.path.basename(png_path)
     if os.path.exists(png_path):
@@ -302,20 +360,41 @@ def build_infographic_html(content: str, name: str, input_path: str) -> str:
 <head>
 <meta charset="UTF-8">
 <title>{name}</title>
+<script src="https://cdn.jsdelivr.net/npm/svg-pan-zoom@3.6.1/dist/svg-pan-zoom.min.js"></script>
 <style>
-body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #222; padding: 0; margin: 0; overflow: hidden; height: 100vh; display: flex; align-items: center; justify-content: center; }}
-img {{ max-width: 95vw; max-height: 95vh; object-fit: contain; border-radius: 8px; box-shadow: 0 8px 32px rgba(0,0,0,0.6); }}
-.hint {{ position: fixed; bottom: 12px; right: 12px; background: rgba(0,0,0,0.6); color: #aaa; font-size: 11px; padding: 6px 10px; border-radius: 4px; }}
+* {{ margin: 0; padding: 0; box-sizing: border-box; }}
+html, body {{ width: 100%; height: 100%; overflow: hidden; background: #1e1e1e; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }}
+.wrap {{ width: 100vw; height: 100vh; overflow: hidden; cursor: grab; position: relative; }}
+.wrap:active {{ cursor: grabbing; }}
+.inner {{ display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; }}
+.header {{ position: absolute; top: 0; left: 0; right: 0; z-index: 10; padding: 12px 16px; background: linear-gradient(to bottom, rgba(30,30,30,0.95), transparent); display: flex; align-items: center; gap: 10px; pointer-events: none; }}
+h1 {{ color: #e0e0e0; font-size: 16px; font-weight: normal; }}
+.note {{ padding: 3px 10px; border-radius: 4px; font-size: 11px; background: rgba(99,102,241,0.9); color: white; }}
+.inner img {{ max-width: 90vw; max-height: 90vh; border-radius: 6px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); }}
+.hint {{ position: absolute; bottom: 12px; right: 12px; background: rgba(0,0,0,0.55); color: #aaa; font-size: 11px; padding: 5px 10px; border-radius: 4px; pointer-events: none; }}
 </style>
 </head>
 <body>
-<img src="{png_name}" alt="{name}">
-<div class="hint">滚轮缩放 · 左键拖动平移</div>
+<div class="wrap" id="wrap">
+  <div class="header">
+    <h1>{name}</h1>
+    <span class="note">PNG截图</span>
+  </div>
+  <div class="inner">
+    <img src="{png_name}" alt="{name}"/>
+  </div>
+  <div class="hint">滚轮缩放 · 左键拖动平移</div>
+</div>
 <script>
 document.addEventListener('DOMContentLoaded', function() {{
-  var el = document.querySelector('img');
-  if (el) {{
-    svgPanZoom(el, {{ zoomEnabled: true, panEnabled: true, controlIconsEnabled: false, fit: true, center: true, zoomScaleSensitivity: 0.4, minZoom: 0.1, maxZoom: 20 }});
+  var img = document.querySelector('.inner img');
+  if (img) {{
+    svgPanZoom(img, {{
+      viewportId: 'diagram-viewport',
+      zoomEnabled: true, panEnabled: true, controlIconsEnabled: false,
+      fit: true, center: true, zoomScaleSensitivity: 0.5,
+      minZoom: 0.1, maxZoom: 50
+    }});
   }}
 }});
 </script>
@@ -325,48 +404,55 @@ document.addEventListener('DOMContentLoaded', function() {{
         return f'''<!DOCTYPE html>
 <html>
 <head><meta charset="UTF-8"><title>{name}</title></head>
-<body><h1>{name}</h1><p>Infographic 需要截图，请查看同目录的 PNG 文件</p></body>
+<body style="background:#1e1e1e;padding:20px;color:#e0e0e0;font-family:-apple-system,sans-serif;">
+<h1>{name}</h1><p>Infographic PNG截图不存在，请查看同目录截图文件</p></body>
 </html>'''
 
 
 # ─── Canvas ──────────────────────────────────────────────────────────────────
 
 def build_canvas_html(content: str, name: str) -> str:
-    """Canvas JSON → HTML"""
     match = re.search(r'```canvas\s*\n(.*?)\n```', content, re.DOTALL)
     canvas_json = match.group(1).strip() if match else '{}'
-    escaped = canvas_json.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;')
+    esc = canvas_json.replace('&','&amp;').replace('<','&lt;').replace('>','&gt;').replace('"','&quot;')
     return f'''<!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
 <title>{name}</title>
 <style>
-body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #222; padding: 0; margin: 0; overflow: hidden; height: 100vh; }}
-h1 {{ color: #e0e0e0; margin: 12px 16px; font-size: 16px; position: absolute; top: 0; left: 0; z-index: 10; }}
-.note {{ background: rgba(99,102,241,0.9); color: white; padding: 4px 10px; border-radius: 4px; font-size: 11px; margin-left: 10px; }}
-pre {{ background: rgba(45,45,45,0.95); border-radius: 8px; padding: 16px; color: #d4d4d4; white-space: pre-wrap; font-size: 12px; margin: 60px 16px 16px; }}
-.hint {{ position: fixed; bottom: 12px; right: 12px; background: rgba(0,0,0,0.6); color: #aaa; font-size: 11px; padding: 6px 10px; border-radius: 4px; }}
+* {{ margin: 0; padding: 0; box-sizing: border-box; }}
+html, body {{ width: 100%; height: 100%; overflow: hidden; background: #1e1e1e; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }}
+.wrap {{ width: 100vw; height: 100vh; overflow: hidden; position: relative; }}
+.header {{ position: absolute; top: 0; left: 0; right: 0; z-index: 10; padding: 12px 16px; background: linear-gradient(to bottom, rgba(30,30,30,0.95), transparent); display: flex; align-items: center; gap: 10px; }}
+h1 {{ color: #e0e0e0; font-size: 16px; font-weight: normal; }}
+.note {{ padding: 3px 10px; border-radius: 4px; font-size: 11px; background: rgba(99,102,241,0.9); color: white; }}
+pre {{ background: rgba(45,45,45,0.95); border-radius: 8px; padding: 16px; color: #d4d4d4; white-space: pre-wrap; font-size: 12px; margin: 70px 16px 16px; }}
+.hint {{ position: absolute; bottom: 12px; right: 12px; background: rgba(0,0,0,0.55); color: #aaa; font-size: 11px; padding: 5px 10px; border-radius: 4px; }}
 </style>
 </head>
 <body>
-<h1>{name} <span class="note">Canvas 需 Obsidian 渲染</span></h1>
-<pre>{escaped}</pre>
-<div class="hint">仅展示 JSON 数据，请在 Obsidian 中查看渲染效果</div>
+<div class="wrap">
+  <div class="header">
+    <h1>{name}</h1>
+    <span class="note">Canvas 需 Obsidian 渲染</span>
+  </div>
+  <pre>{esc}</pre>
+  <div class="hint">请在 Obsidian 中查看渲染效果</div>
+</div>
 </body>
 </html>'''
 
 
-# ─── CLI ──────────────────────────────────────────────────────────────────────
+# ─── CLI entry point ─────────────────────────────────────────────────────────
 
 def main():
-    parser = argparse.ArgumentParser(description='将 .md（含PlantUML/HTML/Mermaid图表）转换为只显示图的 .html')
+    parser = argparse.ArgumentParser(description='将含图 .md 转换为可双击的 .html（滚轮缩放+左键拖动）')
     parser.add_argument('--input', '-i', required=True, help='输入 .md 文件路径')
-    parser.add_argument('--output', '-o', help='输出 .html 文件路径（默认：输入名.html）')
+    parser.add_argument('--output', '-o', help='输出 .html 路径（默认同名.html）')
     args = parser.parse_args()
     success = md_to_html(args.input, args.output)
     sys.exit(0 if success else 1)
-
 
 if __name__ == '__main__':
     main()
