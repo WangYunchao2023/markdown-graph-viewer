@@ -1,12 +1,14 @@
 ---
 name: markdown-graph-viewer
 description: 智能图表生成调度器。当用户请求生成图表、图示、可视化内容时（尤其是需求模糊、不知道该用哪种图时），自动激活本Skill。激活关键词：画图、图表、diagram、生成图表、帮我画、展示结构、可视化、graph、chart、图表类型咨询。子Skill覆盖：archimate/architecture/bpmn/canvas/cloud/data-analytics/graphviz/infocard/infographic/iot/mindmap/network/security/uml/vega。
-version: 3.0.0
+version: 3.0.1
 ---
 
 # Markdown Graph Viewer - 智能图表调度器
 
 当用户请求生成图表时，**先读取本文件分析意图和输出方式**，按决策树确定输出策略。
+
+**输出原则：只显示渲染后的图，不显示源码。** HTML文件双击打开即为图，无需任何插件。
 
 ---
 
